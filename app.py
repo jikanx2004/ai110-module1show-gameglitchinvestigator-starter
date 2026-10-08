@@ -1,6 +1,8 @@
 import random
 import streamlit as st
 
+from logic_utils import check_guess
+
 def get_range_for_difficulty(difficulty: str):
     if difficulty == "Easy":
         return 1, 20
@@ -27,24 +29,6 @@ def parse_guess(raw: str):
         return False, None, "That is not a number."
 
     return True, value, None
-
-
-def check_guess(guess, secret):
-    if guess == secret:
-        return "Win", "🎉 Correct!"
-
-    try:
-        if guess > secret:
-            return "Too High", "📈 Go HIGHER!"
-        else:
-            return "Too Low", "📉 Go LOWER!"
-    except TypeError:
-        g = str(guess)
-        if g == secret:
-            return "Win", "🎉 Correct!"
-        if g > secret:
-            return "Too High", "📈 Go HIGHER!"
-        return "Too Low", "📉 Go LOWER!"
 
 
 def update_score(current_score: int, outcome: str, attempt_number: int):
@@ -106,29 +90,41 @@ if "history" not in st.session_state:
 
 st.subheader("Make a guess")
 
-st.info(
-    f"Guess a number between 1 and 100. "
-    f"Attempts left: {attempt_limit - st.session_state.attempts}"
-)
+# Placeholders are filled at the end of the run, after the guess is processed,
+# so they always show the current attempts/history instead of last turn's.
+info_box = st.empty()
+debug_box = st.empty()
 
-with st.expander("Developer Debug Info"):
-    st.write("Secret:", st.session_state.secret)
-    st.write("Attempts:", st.session_state.attempts)
-    st.write("Score:", st.session_state.score)
-    st.write("Difficulty:", difficulty)
-    st.write("History:", st.session_state.history)
 
-raw_guess = st.text_input(
-    "Enter your guess:",
-    key=f"guess_input_{difficulty}"
-)
+def render_status():
+    info_box.info(
+        f"Guess a number between 1 and 100. "
+        f"Attempts left: {attempt_limit - st.session_state.attempts}"
+    )
+    with debug_box.container():
+        with st.expander("Developer Debug Info"):
+            st.write("Secret:", st.session_state.secret)
+            st.write("Attempts:", st.session_state.attempts)
+            st.write("Score:", st.session_state.score)
+            st.write("Difficulty:", difficulty)
+            st.write("History:", st.session_state.history)
 
-col1, col2, col3 = st.columns(3)
+
+#This is the start of the column layout for the buttons and where the bug begins
+# FIX: Input and submit live in a form, so pressing Enter in the text box
+# triggers the submit button on the same run (previously Enter only stored
+# the value and the guess wasn't processed until the next interaction).
+with st.form("guess_form", clear_on_submit=True):
+    raw_guess = st.text_input(
+        "Enter your guess:",
+        key=f"guess_input_{difficulty}"
+    )
+    submit = st.form_submit_button("Submit Guess 🚀")
+
+col1, col2 = st.columns(2)
 with col1:
-    submit = st.button("Submit Guess 🚀")
-with col2:
     new_game = st.button("New Game 🔁")
-with col3:
+with col2:
     show_hint = st.checkbox("Show hint", value=True)
 
 if new_game:
@@ -142,6 +138,7 @@ if st.session_state.status != "playing":
         st.success("You already won. Start a new game to play again.")
     else:
         st.error("Game over. Start a new game to try again.")
+    render_status()
     st.stop()
 
 if submit:
@@ -155,12 +152,9 @@ if submit:
     else:
         st.session_state.history.append(guess_int)
 
-        if st.session_state.attempts % 2 == 0:
-            secret = str(st.session_state.secret)
-        else:
-            secret = st.session_state.secret
-
-        outcome, message = check_guess(guess_int, secret)
+        # FIX: Always pass the secret as an int. Previously it was converted to
+        # a str on even attempts, which made high/low comparisons wrong.
+        outcome, message = check_guess(guess_int, st.session_state.secret)
 
         if show_hint:
             st.warning(message)
@@ -186,6 +180,8 @@ if submit:
                     f"The secret was {st.session_state.secret}. "
                     f"Score: {st.session_state.score}"
                 )
+
+render_status()
 
 st.divider()
 st.caption("Built by an AI that claims this code is production-ready.")
